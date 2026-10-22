@@ -1,0 +1,31 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+
+# Local datasets (DVC will manage selected data)
+data/raw/
+data/interim/
+data/processed/
+data/splits/
+
+# Model and experiment artifacts
+models/
+mlruns/
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
+
+# Reports generated during runs
+reports/eda/
+reports/evaluation/
+
+# Local development
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
