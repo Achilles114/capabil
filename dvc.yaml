@@ -1,0 +1,32 @@
+
+stages:
+  ingest:
+    cmd: python scripts/ingest_data.py
+    deps:
+      - scripts/ingest_data.py
+      - data/raw/occupations_en.csv
+      - data/raw/skills_en.csv
+      - data/raw/occupationSkillRelations_en.csv
+    outs:
+      - data/interim/occupation_skill_relationships.csv
+      - data/processed/occupation_skill_dataset.csv
+
+  validate:
+    cmd: python scripts/validate_data.py
+    deps:
+      - scripts/validate_data.py
+      - data/processed/occupation_skill_dataset.csv
+    outs:
+      - reports/eda/data_quality_report.json:
+          cache: false
+
+  prepare:
+    cmd: python scripts/prepare_data.py
+    deps:
+      - scripts/prepare_data.py
+      - data/processed/occupation_skill_dataset.csv
+    outs:
+      - data/splits/train.csv
+      - data/splits/validation.csv
+      - data/splits/test.csv
+      - data/splits/split_report.json

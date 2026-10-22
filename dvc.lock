@@ -1,0 +1,74 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python scripts/ingest_data.py
+    deps:
+    - path: data/raw/occupationSkillRelations_en.csv
+      hash: md5
+      md5: 5b8435004e79151e3804d70acf5631d2
+      size: 27986628
+    - path: data/raw/occupations_en.csv
+      hash: md5
+      md5: 1adbac869a508c9a7dc83d01ca4d112b
+      size: 3047703
+    - path: data/raw/skills_en.csv
+      hash: md5
+      md5: c72e38d41c517dd0064f4fddbcf73d74
+      size: 9302000
+    - path: scripts/ingest_data.py
+      hash: md5
+      md5: 139217fac6bd47c487379e889e4d2cb1
+      size: 7852
+    outs:
+    - path: data/interim/occupation_skill_relationships.csv
+      hash: md5
+      md5: 8810703d6e20b9f5367eadbbefd3569e
+      size: 88832444
+    - path: data/processed/occupation_skill_dataset.csv
+      hash: md5
+      md5: 8810703d6e20b9f5367eadbbefd3569e
+      size: 88832444
+  validate:
+    cmd: python scripts/validate_data.py
+    deps:
+    - path: data/processed/occupation_skill_dataset.csv
+      hash: md5
+      md5: 8810703d6e20b9f5367eadbbefd3569e
+      size: 88832444
+    - path: scripts/validate_data.py
+      hash: md5
+      md5: c1952daf8b85e1ffcd2ff8702ec104ad
+      size: 3443
+    outs:
+    - path: reports/eda/data_quality_report.json
+      hash: md5
+      md5: decadbc321b94baa3e4149bde8fd99d7
+      size: 1033
+  prepare:
+    cmd: python scripts/prepare_data.py
+    deps:
+    - path: data/processed/occupation_skill_dataset.csv
+      hash: md5
+      md5: 8810703d6e20b9f5367eadbbefd3569e
+      size: 88832444
+    - path: scripts/prepare_data.py
+      hash: md5
+      md5: 43b6e2316d7ae45c7ce5e5a5cb859053
+      size: 3727
+    outs:
+    - path: data/splits/split_report.json
+      hash: md5
+      md5: b56993a89f4f68f3e6193e869b93deef
+      size: 731
+    - path: data/splits/test.csv
+      hash: md5
+      md5: 80ee83bdf6ced97747b61d100b1f2b9a
+      size: 13370081
+    - path: data/splits/train.csv
+      hash: md5
+      md5: 52a02df66dd9b9f92efac678cf5c883d
+      size: 61899686
+    - path: data/splits/validation.csv
+      hash: md5
+      md5: a687aefd36f6aece0b2e4e5a6eef5b61
+      size: 13563328
