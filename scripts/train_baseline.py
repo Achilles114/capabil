@@ -1,11 +1,10 @@
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import joblib
-import mlflow
-import mlflow.sklearn
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -21,23 +20,28 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from capabilume.mlops.tracking import (
+    configure_tracking,
+    log_training_run,
+)
+
 SPLITS = ROOT / "data" / "splits"
 MODELS = ROOT / "models"
 REPORTS = ROOT / "reports" / "evaluation"
-MLRUNS = ROOT / "mlruns"
 
 TARGET = "relation_type"
 GROUP = "occupation_uri"
 RANDOM_STATE = 42
-
 LABELS = ["essential", "optional"]
 
 
 def sha256_file(path):
-    """Fingerprint a file so changes to the data can be detected."""
+    """Fingerprint a file to identify the exact dataset version."""
     digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -90,6 +94,11 @@ def calculate_metrics(y_true, predictions):
 
 
 def main():
+    configure_tracking(
+        project_root=ROOT,
+        config_path=ROOT / "configs" / "training.yaml",
+    )
+
     for directory in [SPLITS, MODELS, REPORTS]:
         if not directory.exists():
             raise FileNotFoundError(
@@ -101,7 +110,6 @@ def main():
         for name in ["train", "validation", "test"]
     }
 
-    # Record the exact content of each split.
     dataset_hashes = {
         name: sha256_file(path)
         for name, path in split_paths.items()
@@ -129,7 +137,9 @@ def main():
     ]:
         missing = required_columns - set(frame.columns)
         if missing:
-            raise ValueError(f"{name} is missing columns: {sorted(missing)}")
+            raise ValueError(
+                f"{name} is missing columns: {sorted(missing)}"
+            )
 
         if frame[list(required_columns)].isna().any().any():
             raise ValueError(f"Unexpected missing values in {name}.")
@@ -137,7 +147,7 @@ def main():
         if not set(frame[TARGET].unique()).issubset(LABELS):
             raise ValueError(f"Unexpected labels in {name}.")
 
-    # Verify no occupation occurs across different splits.
+    # Prevent occupation leakage across splits.
     train_groups = set(train[GROUP])
     val_groups = set(validation[GROUP])
     test_groups = set(test[GROUP])
@@ -185,137 +195,132 @@ def main():
         )),
     ])
 
-    # Local MLflow tracking; no hosted service required.
-    mlflow.set_tracking_uri(MLRUNS.resolve().as_uri())
-    mlflow.set_experiment("capabilume-esco-baseline")
-
-    with mlflow.start_run(run_name="tfidf-logistic-regression") as run:
-        mlflow.log_params({
-            "model_type": "LogisticRegression",
-            "vectorizer": "TfidfVectorizer",
-            "max_features": 100_000,
-            "ngram_range": "(1, 2)",
-            "min_df": 2,
-            "sublinear_tf": True,
-            "max_iter": 1000,
-            "random_state": RANDOM_STATE,
-            "split_strategy": "GroupShuffleSplit by occupation_uri",
-            "train_rows": len(train),
-            "validation_rows": len(validation),
-            "test_rows": len(test),
-        })
-
-        # Track exact split contents, not merely filenames.
-        mlflow.log_params({
-            f"sha256_{name}": digest
-            for name, digest in dataset_hashes.items()
-        })
-
-        split_metadata = {
-            name: {
-                "rows": len(frame),
-                "occupations": int(frame[GROUP].nunique()),
-                "label_counts": {
-                    str(k): int(v)
-                    for k, v in frame[TARGET].value_counts().items()
-                },
-                "sha256": dataset_hashes[name],
-            }
-            for name, frame in [
-                ("train", train),
-                ("validation", validation),
-                ("test", test),
-            ]
+    split_metadata = {
+        name: {
+            "rows": len(frame),
+            "occupations": int(frame[GROUP].nunique()),
+            "label_counts": {
+                str(key): int(value)
+                for key, value in frame[TARGET].value_counts().items()
+            },
+            "sha256": dataset_hashes[name],
         }
+        for name, frame in [
+            ("train", train),
+            ("validation", validation),
+            ("test", test),
+        ]
+    }
 
-        print("Training baseline model...")
-        model.fit(X_train, y_train)
+    print("Training baseline model...")
+    model.fit(X_train, y_train)
 
-        print("Evaluating validation set...")
-        val_predictions = model.predict(X_val)
-        val_metrics = calculate_metrics(y_val, val_predictions)
+    print("Evaluating validation set...")
+    val_metrics = calculate_metrics(y_val, model.predict(X_val))
 
-        print("Evaluating test set...")
-        test_predictions = model.predict(X_test)
-        test_metrics = calculate_metrics(y_test, test_predictions)
+    print("Evaluating test set...")
+    test_metrics = calculate_metrics(y_test, model.predict(X_test))
 
-        # A majority-class baseline fitted on training data only.
-        majority_baseline = max(
-            y_train.value_counts(normalize=True).to_dict().values()
-        )
+    majority_baseline = float(
+        y_train.value_counts(normalize=True).max()
+    )
 
-        results = {
-            "model": "TF-IDF + Logistic Regression",
-            "target": TARGET,
-            "label_order": LABELS,
-            "split_strategy": "unseen occupations",
-            "majority_class_train_accuracy": float(majority_baseline),
-            "dataset_hashes": dataset_hashes,
-            "splits": split_metadata,
-            "validation": val_metrics,
-            "test": test_metrics,
-        }
+    results = {
+        "model": "TF-IDF + Logistic Regression",
+        "target": TARGET,
+        "label_order": LABELS,
+        "split_strategy": "unseen occupations",
+        "majority_class_train_accuracy": majority_baseline,
+        "dataset_hashes": dataset_hashes,
+        "splits": split_metadata,
+        "validation": val_metrics,
+        "test": test_metrics,
+    }
 
-        for split_name, metric_set in [
-            ("validation", val_metrics),
-            ("test", test_metrics),
-        ]:
-            for metric_name in [
+    model_path = MODELS / "esco_relation_baseline.joblib"
+    metrics_path = REPORTS / "baseline_metrics.json"
+    metadata_path = REPORTS / "dataset_split_metadata.json"
+
+    joblib.dump(model, model_path)
+
+    metrics_path.write_text(
+        json.dumps(results, indent=2),
+        encoding="utf-8",
+    )
+    metadata_path.write_text(
+        json.dumps(split_metadata, indent=2),
+        encoding="utf-8",
+    )
+
+    params = {
+        "model_type": "LogisticRegression",
+        "vectorizer": "TfidfVectorizer",
+        "max_features": 100_000,
+        "ngram_range": "(1, 2)",
+        "min_df": 2,
+        "sublinear_tf": True,
+        "max_iter": 1000,
+        "random_state": RANDOM_STATE,
+        "split_strategy": "GroupShuffleSplit by occupation_uri",
+        "train_rows": len(train),
+        "validation_rows": len(validation),
+        "test_rows": len(test),
+    }
+    params.update({
+        f"sha256_{name}": digest
+        for name, digest in dataset_hashes.items()
+    })
+
+    metrics = {
+        "validation_accuracy": val_metrics["accuracy"],
+        "validation_balanced_accuracy": val_metrics["balanced_accuracy"],
+        "validation_macro_f1": val_metrics["macro_f1"],
+        "test_accuracy": test_metrics["accuracy"],
+        "test_balanced_accuracy": test_metrics["balanced_accuracy"],
+        "test_macro_f1": test_metrics["macro_f1"],
+        "train_majority_class_accuracy": majority_baseline,
+    }
+
+    run_id = log_training_run(
+        run_name="tfidf-logistic-regression",
+        params=params,
+        metrics=metrics,
+        artifacts={
+            "evaluation": metrics_path,
+            "data-metadata": metadata_path,
+            "model-files": model_path,
+        },
+        model=model,
+        model_name="esco-relation-classifier",
+        input_example=X_train.head(3),
+    )
+
+    print(f"\nMLflow run ID: {run_id}")
+    print(f"Training majority-class accuracy: {majority_baseline:.4f}")
+
+    for name, metric_set in [
+        ("VALIDATION", val_metrics),
+        ("TEST", test_metrics),
+    ]:
+        print(f"\n{name} METRICS")
+        print(json.dumps({
+            key: metric_set[key]
+            for key in [
                 "accuracy",
                 "balanced_accuracy",
                 "macro_f1",
-            ]:
-                mlflow.log_metric(
-                    f"{split_name}_{metric_name}",
-                    metric_set[metric_name],
-                )
-
-        mlflow.log_metric(
-            "train_majority_class_accuracy",
-            majority_baseline,
+                "confusion_matrix",
+            ]
+        }, indent=2))
+        print("\nPer-class report:")
+        print(
+            pd.DataFrame(metric_set["classification_report"])
+            .T.round(3)
         )
 
-        model_path = MODELS / "esco_relation_baseline.joblib"
-        metrics_path = REPORTS / "baseline_metrics.json"
-        metadata_path = REPORTS / "dataset_split_metadata.json"
-
-        joblib.dump(model, model_path)
-
-        with open(metrics_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2)
-
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump(split_metadata, f, indent=2)
-
-        mlflow.log_artifact(str(metrics_path), artifact_path="evaluation")
-        mlflow.log_artifact(str(metadata_path), artifact_path="data-metadata")
-        mlflow.log_artifact(str(model_path), artifact_path="model-files")
-
-        mlflow.sklearn.log_model(
-            model,
-            name="esco-relation-classifier",
-            input_example=X_train.head(3),
-        )
-
-        print(f"\nMLflow run ID: {run.info.run_id}")
-        print(f"Training majority-class accuracy: {majority_baseline:.4f}")
-
-        for name, metric_set in [
-            ("VALIDATION", val_metrics),
-            ("TEST", test_metrics),
-        ]:
-            print(f"\n{name} METRICS")
-            print(json.dumps({
-                key: metric_set[key]
-                for key in ["accuracy", "balanced_accuracy", "macro_f1",
-                            "confusion_matrix"]
-            }, indent=2))
-            print("\nPer-class report:")
-            print(pd.DataFrame(metric_set["classification_report"]).T.round(3))
-
-        print(f"\nModel: {model_path}")
-        print(f"Metrics: {metrics_path}")
-        print(f"Dataset metadata: {metadata_path}")
+    print(f"\nModel: {model_path}")
+    print(f"Metrics: {metrics_path}")
+    print(f"Dataset metadata: {metadata_path}")
 
 
 if __name__ == "__main__":

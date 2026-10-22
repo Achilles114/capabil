@@ -1,0 +1,16 @@
+
+experiment:
+  name: capabilume-esco-baseline
+
+tracking:
+  backend: sqlite
+  database: mlflow.db
+
+model:
+  name: esco-relation-classifier
+  max_iter: 1000
+  random_state: 42
+
+data:
+  split_strategy: group_by_occupation
+  random_state: 42
