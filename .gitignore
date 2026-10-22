@@ -7,11 +7,15 @@ venv/
 .env
 .env.*
 
-# Local datasets (DVC will manage selected data)
-data/raw/
-data/interim/
-data/processed/
-data/splits/
+# DVC-managed data: ignore data files, allow DVC pointer files
+data/raw/*
+data/interim/*
+data/processed/*
+data/splits/*
+!data/raw/*.dvc
+!data/interim/*.dvc
+!data/processed/*.dvc
+!data/splits/*.dvc
 
 # Model and experiment artifacts
 models/
