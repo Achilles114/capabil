@@ -30,3 +30,21 @@ stages:
       - data/splits/validation.csv
       - data/splits/test.csv
       - data/splits/split_report.json
+
+  train:
+    cmd: python scripts/train_baseline.py
+    deps:
+      - scripts/train_baseline.py
+      - src/capabilume/mlops/tracking.py
+      - configs/training.yaml
+      - data/splits/train.csv
+      - data/splits/validation.csv
+      - data/splits/test.csv
+    outs:
+      - models/esco_relation_baseline.joblib:
+          cache: false
+    metrics:
+      - reports/evaluation/baseline_metrics.json:
+          cache: false
+      - reports/evaluation/dataset_split_metadata.json:
+          cache: false

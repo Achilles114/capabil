@@ -72,3 +72,43 @@ stages:
       hash: md5
       md5: a687aefd36f6aece0b2e4e5a6eef5b61
       size: 13563328
+  train:
+    cmd: python scripts/train_baseline.py
+    deps:
+    - path: configs/training.yaml
+      hash: md5
+      md5: e6350f000d29970405ce472aa2823b2d
+      size: 254
+    - path: data/splits/test.csv
+      hash: md5
+      md5: 80ee83bdf6ced97747b61d100b1f2b9a
+      size: 13370081
+    - path: data/splits/train.csv
+      hash: md5
+      md5: 52a02df66dd9b9f92efac678cf5c883d
+      size: 61899686
+    - path: data/splits/validation.csv
+      hash: md5
+      md5: a687aefd36f6aece0b2e4e5a6eef5b61
+      size: 13563328
+    - path: scripts/train_baseline.py
+      hash: md5
+      md5: 99248086e4b77a5e74f9fb255eb202b5
+      size: 9366
+    - path: src/capabilume/mlops/tracking.py
+      hash: md5
+      md5: 841253615693904c1270f190839d1cb8
+      size: 1342
+    outs:
+    - path: models/esco_relation_baseline.joblib
+      hash: md5
+      md5: 1686fef8a6c224a128025e22807fe19c
+      size: 5141169
+    - path: reports/evaluation/baseline_metrics.json
+      hash: md5
+      md5: 53b03a2d07b1ff5461a32ee1c9ba1dd9
+      size: 3433
+    - path: reports/evaluation/dataset_split_metadata.json
+      hash: md5
+      md5: e2857e5fb7fdca0b71bad938d50601e6
+      size: 696
