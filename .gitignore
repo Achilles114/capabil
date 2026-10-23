@@ -33,3 +33,7 @@ reports/evaluation/
 .coverage
 htmlcov/
 .vscode/
+
+# Runtime monitoring output
+reports/monitoring/predictions.jsonl
+reports/monitoring/drift_report.json
